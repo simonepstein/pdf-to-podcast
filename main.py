@@ -3,6 +3,8 @@ import glob
 import io
 import os
 import time
+import pdfkit
+import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import List, Literal
@@ -146,15 +148,36 @@ def generate_audio(file: str, openai_api_key: str = None) -> bytes:
 
     return temporary_file.name, transcript
 
+def parse_inputs(file: str, url: str, openai_api_key: str = None) -> bytes:
+    if file and  not(url):
+        return generate_audio(file, openai_api_key)
+    elif url and not(file):
+        fp = next(tempfile._get_candidate_names())
+        try:
+            pdfkit.from_url(url, fp)
+        except Exception as e:
+            raise gr.Error("Failed to retrieve content from URL: " + str(e))
 
+        return generate_audio(fp, openai_api_key)
+    else:
+        raise gr.Error("Either a file or URL must be provided")
+
+example_inputs = [[str(p), None] for p in Path("examples").glob("*.pdf")] + [
+    [None, "https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies"],
+    [None, "https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental"],
+    [None, "https://www.bbc.co.uk/news/articles/cxwwjlrk1mlo"],
+]
 demo = gr.Interface(
-    title="PDF to Podcast",
+    title="PDF or Web page to Podcast",
     description=Path("description.md").read_text(),
-    fn=generate_audio,
-    examples=[[str(p)] for p in Path("examples").glob("*.pdf")],
+    fn=parse_inputs,
+    examples=example_inputs,
     inputs=[
         gr.File(
             label="PDF",
+        ),
+        gr.Textbox(
+            label="URL"
         ),
         gr.Textbox(
             label="OpenAI API Key",

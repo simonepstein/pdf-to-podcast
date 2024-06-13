@@ -233,7 +233,7 @@ demo = gr.Interface(
     examples=example_inputs,
     inputs=[
         gr.File(
-            label="PDF",
+            label="File (html or pdf)",
         ),
         gr.Textbox(
             label="URL"

@@ -188,15 +188,19 @@ def generate_audio(text: str, with_metadata: bool, openai_api_key: str = None) -
     return temporary_file.name, transcript
 
 def parse_inputs(file: str, url: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+    if not os.getenv("OPENAI_API_KEY", openai_api_key):
+        raise gr.Error("OpenAI API key is required")
     if file and  not(url):
-        logger.info("===== Processing PDF =====")
+        logger.info("===== Processing file =====")
         logger.info(file)
-        if not os.getenv("OPENAI_API_KEY", openai_api_key):
-            raise gr.Error("OpenAI API key is required")
-
         with Path(file).open("rb") as f:
-            reader = PdfReader(f)
-            text = "\n\n".join([page.extract_text() for page in reader.pages])
+            if file.endswith(".pdf"):
+                logger.info("===== Processing PDF =====")
+                reader = PdfReader(f)
+                text = "\n\n".join([page.extract_text() for page in reader.pages])
+            else:
+                soup = BeautifulSoup(f, 'html.parser')
+                text = soup.get_text(separator=' ', strip=True)
             return generate_audio(text, openai_api_key)
         
     elif url and not(file):

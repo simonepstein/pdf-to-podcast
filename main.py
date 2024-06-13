@@ -45,7 +45,7 @@ class Dialogue(BaseModel):
 
 
 @retry(retry=retry_if_exception_type(ValidationError))
-@llm(model="gemini/gemini-1.5-flash", max_tokens=8192)
+@llm(model="gpt-4o", max_tokens=4096)
 def generate_dialogue(text: str) -> Dialogue:
     """
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.

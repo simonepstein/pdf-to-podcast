@@ -1,9 +1,5 @@
 FROM python:3.12-slim
 
-ARG DEBIAN_FRONTEND="noninteractive"
-
-RUN apt-get update && apt-get install --yes --no-install-recommends wkhtmltopdf
-
 RUN pip install uv
 RUN uv venv
 

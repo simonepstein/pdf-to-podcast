@@ -7,4 +7,5 @@ pypdf~=4.1
 tenacity~=8.3
 sentry-sdk~=2.5
 granian~=1.4
-pdfkit==1.0.0
+requests==2.32.3
+beautifulsoup4==4.12.3

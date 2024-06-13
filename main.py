@@ -3,8 +3,6 @@ import glob
 import io
 import os
 import time
-import pdfkit
-import tempfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import List, Literal
@@ -19,7 +17,8 @@ from promptic import llm
 from pydantic import BaseModel, ValidationError
 from pypdf import PdfReader
 from tenacity import retry, retry_if_exception_type
-
+import requests
+from bs4 import BeautifulSoup
 
 sentry_sdk.init(os.getenv("SENTRY_DSN"))
 
@@ -98,14 +97,9 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             return file.getvalue()
 
 
-def generate_audio(file: str, openai_api_key: str = None) -> bytes:
-
-    if not os.getenv("OPENAI_API_KEY", openai_api_key):
-        raise gr.Error("OpenAI API key is required")
-
-    with Path(file).open("rb") as f:
-        reader = PdfReader(f)
-        text = "\n\n".join([page.extract_text() for page in reader.pages])
+def generate_audio(text: str, openai_api_key: str = None) -> bytes:
+    print("===== Generating audio =====")
+    print(text)
 
     llm_output = generate_dialogue(text)
 
@@ -150,22 +144,38 @@ def generate_audio(file: str, openai_api_key: str = None) -> bytes:
 
 def parse_inputs(file: str, url: str, openai_api_key: str = None) -> bytes:
     if file and  not(url):
-        return generate_audio(file, openai_api_key)
+        print("===== Processing PDF =====")
+        print(file)
+        if not os.getenv("OPENAI_API_KEY", openai_api_key):
+            raise gr.Error("OpenAI API key is required")
+
+        with Path(file).open("rb") as f:
+            reader = PdfReader(f)
+            text = "\n\n".join([page.extract_text() for page in reader.pages])
+            return generate_audio(text, openai_api_key)
+        
     elif url and not(file):
-        fp = next(tempfile._get_candidate_names())
+        print("===== Fetching URL =====")
+        print(url)
         try:
-            pdfkit.from_url(url, fp)
+            response = requests.get(url)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                text = soup.get_text(separator=' ', strip=True)
+                return generate_audio(text, openai_api_key)
+            else:
+                raise gr.Error("Failed to retrieve the webpage")
+            
         except Exception as e:
             raise gr.Error("Failed to retrieve content from URL: " + str(e))
 
-        return generate_audio(fp, openai_api_key)
     else:
         raise gr.Error("Either a file or URL must be provided")
 
 example_inputs = [[str(p), None] for p in Path("examples").glob("*.pdf")] + [
     [None, "https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies"],
     [None, "https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental"],
-    [None, "https://www.bbc.co.uk/news/articles/cxwwjlrk1mlo"],
+    [None, "https://blog.67bricks.com/?p=739"],
 ]
 demo = gr.Interface(
     title="PDF or Web page to Podcast",

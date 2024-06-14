@@ -133,7 +133,7 @@ def translate_dialog(dialog: Dialogue, language: str, openai_api_key: str = None
 @llm(model="gpt-4o", max_tokens=4096)
 def translate_line(text: str, language: str, openai_api_key: str = None) -> str:
     """
-    Translate the following text into {language}.
+    Translate the following text into {language}. Return the translated text directly, without preamble.
     Text to translate: {text}
     """
 def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:

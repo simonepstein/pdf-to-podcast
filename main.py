@@ -187,54 +187,74 @@ def generate_audio(text: str, with_metadata: bool, openai_api_key: str = None) -
 
     return temporary_file.name, transcript
 
-def parse_inputs(file: str, url: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_file_upload(file:str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
-    if file and  not(url):
-        logger.info("===== Processing file =====")
-        logger.info(file)
-        with Path(file).open("rb") as f:
-            if file.endswith(".pdf"):
-                logger.info("===== Processing PDF =====")
-                reader = PdfReader(f)
-                text = "\n\n".join([page.extract_text() for page in reader.pages])
-            else:
-                soup = BeautifulSoup(f, 'html.parser')
-                text = soup.get_text(separator=' ', strip=True)
-            return generate_audio(text, openai_api_key)
+    logger.info("===== Processing file =====")
+    logger.info(file)
+    with Path(file).open("rb") as f:
+        if file.endswith(".pdf"):
+            logger.info("===== Processing PDF =====")
+            reader = PdfReader(f)
+            text = "\n\n".join([page.extract_text() for page in reader.pages])
+        else:
+            soup = BeautifulSoup(f, 'html.parser')
+            text = soup.get_text(separator=' ', strip=True)
+        return generate_audio(text, with_metadata, openai_api_key)
+
+def handle_url(url:str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+    if not os.getenv("OPENAI_API_KEY", openai_api_key):
+        raise gr.Error("OpenAI API key is required")
+    logger.info("===== Fetching URL =====")
+    logger.info(url)
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            text = soup.get_text(separator=' ', strip=True)
+            return generate_audio(text, with_metadata, openai_api_key)
+        else:
+            raise gr.Error("Failed to retrieve the webpage")
         
-    elif url and not(file):
-        logger.info("===== Fetching URL =====")
-        logger.info(url)
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                text = soup.get_text(separator=' ', strip=True)
-                return generate_audio(text, openai_api_key)
-            else:
-                raise gr.Error("Failed to retrieve the webpage")
-            
-        except Exception as e:
-            raise gr.Error("Failed to retrieve content from URL: " + str(e))
+    except Exception as e:
+        raise gr.Error("Failed to retrieve content from URL: " + str(e))
 
-    else:
-        raise gr.Error("Either a file or URL must be provided")
-
-example_inputs = [[str(p), None, True] for p in Path("examples").glob("*.pdf")] + [
-    [None, "https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", True],
-    [None, "https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", False],
-    [None, "https://blog.67bricks.com/?p=739", True],
-]
-demo = gr.Interface(
-    title="PDF or Web page to Podcast",
-    description=Path("description.md").read_text(),
-    fn=parse_inputs,
-    examples=example_inputs,
+file_interface = gr.Interface(
+    description=Path("description_file_upload.md").read_text(),
+    fn=handle_file_upload,
+    examples=[[str(p), True] for p in Path("examples").glob("*.pdf")],
     inputs=[
         gr.File(
             label="File (html or pdf)",
         ),
+        gr.Checkbox(
+            label="Include title and author in transcript",
+            value=False,
+        ),
+        gr.Textbox(
+            label="OpenAI API Key",
+            visible=not os.getenv("OPENAI_API_KEY"),
+        ),
+    ],
+    outputs=[
+        gr.Audio(label="Audio", format="mp3"),
+        gr.Textbox(label="Transcript"),
+    ],
+    allow_flagging=False,
+    clear_btn=None,
+    cache_examples="lazy",
+    api_name=False,
+)
+
+url_interface = gr.Interface(
+    description=Path("description_url.md").read_text(),
+    fn=handle_url,
+    examples=[
+        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", True],
+        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", False],
+        ["https://blog.67bricks.com/?p=739", True],
+    ],
+    inputs=[
         gr.Textbox(
             label="URL"
         ),
@@ -253,12 +273,16 @@ demo = gr.Interface(
     ],
     allow_flagging=False,
     clear_btn=None,
-    head=os.getenv("HEAD", "") + Path("head.html").read_text(),
     cache_examples="lazy",
     api_name=False,
 )
 
-
+demo = gr.TabbedInterface(
+    title="PDF or Web page to Podcast",
+    head=os.getenv("HEAD", "") + Path("head.html").read_text(), 
+    interface_list=[file_interface, url_interface],
+    tab_names=["Convert file", "Convert web page"],
+)
 demo = demo.queue(
     max_size=20,
     default_concurrency_limit=20,

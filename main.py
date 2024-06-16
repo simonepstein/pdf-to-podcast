@@ -48,15 +48,17 @@ target_languages = ["English", "French", "German", "Spanish", "Chinese"]
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue(text: str) -> Dialogue:
+def generate_dialogue(title_prompt: str, text: str, language: str) -> Dialogue:
     """
-    Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
+    Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
     Here is the input text you will be working with:
 
     <input_text>
     {text}
     </input_text>
+
+    {title_prompt}
 
     First, carefully read through the input text and identify the main topics, key points, and any interesting facts or anecdotes. Think about how you could present this information in a fun, engaging way that would be suitable for an audio podcast.
 
@@ -83,15 +85,17 @@ def generate_dialogue(text: str) -> Dialogue:
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue_with_metadata(text: str) -> Dialogue:
+def generate_dialogue_with_metadata(title_prompt: str, text: str, language: str) -> Dialogue:
     """
-    Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
+    Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
     Here is the input text you will be working with:
 
     <input_text>
     {text}
     </input_text>
+
+    {title_prompt}
 
     First, carefully read through the input text and identify the title, authors, main topics, key points, and any interesting facts or anecdotes. Think about how you could present this information in a fun, engaging way that would be suitable for an audio podcast.
     
@@ -118,24 +122,6 @@ def generate_dialogue_with_metadata(text: str) -> Dialogue:
     </podcast_dialogue>
     """
 
-def translate_dialog(dialog: Dialogue, language: str, openai_api_key: str = None) -> Dialogue:
-
-    with cf.ThreadPoolExecutor() as executor:
-        futures = []
-        for line in dialog.dialogue:
-            future = executor.submit(translate_line, line.text, language, openai_api_key)
-            futures.append(future)
-
-        for future, item in zip(futures, dialog.dialogue):
-            item.text = future.result()
-    return dialog
-
-@llm(model="gpt-4o", max_tokens=4096)
-def translate_line(text: str, language: str, openai_api_key: str = None) -> str:
-    """
-    Translate the following text into {language}. Return the translated text directly, without preamble.
-    Text to translate: {text}
-    """
 def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
     client = OpenAI(
         api_key=api_key or os.getenv("OPENAI_API_KEY"),
@@ -152,20 +138,23 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             return file.getvalue()
 
 
-def generate_audio(text: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def generate_audio(text: str, title: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     logger.info("===== Generating audio =====")
     logger.info(f"Input: {text}")
     if len(text.strip()) == 0:
         raise gr.Error("Failed to extract text from input")
 
+    title_prompt = title_prompt_for_title(title)
+    logger.info(f"Title prompt: {title_prompt}")
+
     llm_output = None
     if with_metadata:
-        llm_output = generate_dialogue_with_metadata(text)
+        llm_output = generate_dialogue_with_metadata(title_prompt, text, language)
     else:
-        llm_output = generate_dialogue(text)
-    if language != "English":
-        logger.info(f"===== Translating dialog to {language} =====")
-        llm_output = translate_dialog(llm_output, language, openai_api_key)
+        llm_output = generate_dialogue(title_prompt, text, language)
+    # if language != "English":
+    #     logger.info(f"===== Translating dialog to {language} =====")
+    #     llm_output = translate_dialog(llm_output, language, openai_api_key)
 
     logger.info("===== Generating dialog =====")
     logger.info(f"Generated: {llm_output}")
@@ -209,7 +198,7 @@ def generate_audio(text: str, language: str, with_metadata: bool, openai_api_key
 
     return temporary_file.name, transcript
 
-def handle_file_upload(file:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_file_upload(file:str, title:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Processing file =====")
@@ -222,9 +211,9 @@ def handle_file_upload(file:str, language: str, with_metadata: bool, openai_api_
         else:
             soup = BeautifulSoup(f, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-        return generate_audio(text, language, with_metadata, openai_api_key)
+        return generate_audio(text, title, language, with_metadata, openai_api_key)
 
-def handle_url(url:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_url(url:str, title:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Fetching URL =====")
@@ -234,12 +223,18 @@ def handle_url(url:str, language: str, with_metadata: bool, openai_api_key: str 
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-            return generate_audio(text, language, with_metadata, openai_api_key)
+            return generate_audio(text, title, language, with_metadata, openai_api_key)
         else:
             raise gr.Error("Failed to retrieve the webpage")
         
     except Exception as e:
         raise gr.Error("Failed to retrieve content from URL: " + str(e))
+
+def title_prompt_for_title(title: str) -> str:
+    if title.strip():
+        return "The podcast should be called " + title + "."
+    else:
+        return ""
 
 file_interface = gr.Interface(
     description=Path("description_file_upload.md").read_text(),
@@ -249,11 +244,14 @@ file_interface = gr.Interface(
         gr.File(
             label="File (html or pdf)",
         ),
+        gr.Textbox(
+            label="Podcast title",
+        ),
         gr.Dropdown(
             target_languages, label="Language", info="Desired podcast language", value="English",
         ),
         gr.Checkbox(
-            label="Include title and author in transcript",
+            label="Include title and author of orignal content in podcast",
             value=False,
         ),
         gr.Textbox(
@@ -265,7 +263,7 @@ file_interface = gr.Interface(
         gr.Audio(label="Audio", format="mp3"),
         gr.Textbox(label="Transcript"),
     ],
-    allow_flagging=False,
+    allow_flagging="False",
     clear_btn=None,
     cache_examples="lazy",
     api_name=False,
@@ -275,19 +273,22 @@ url_interface = gr.Interface(
     description=Path("description_url.md").read_text(),
     fn=handle_url,
     examples=[
-        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "English", True],
-        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "French", False],
-        ["https://blog.67bricks.com/?p=739", "Spanish", True],
+        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "", "English", True],
+        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "", "French", False],
+        ["https://blog.67bricks.com/?p=739", "Coding Principals", "Spanish", True],
     ],
     inputs=[
         gr.Textbox(
             label="URL"
         ),
+        gr.Textbox(
+            label="Podcast title",
+        ),
         gr.Dropdown(
             target_languages, label="Language", info="Desired podcast language", value="English",
         ),
         gr.Checkbox(
-            label="Include title and author in transcript",
+            label="Include title and author of orignal content in podcast",
             value=False,
         ),
         gr.Textbox(

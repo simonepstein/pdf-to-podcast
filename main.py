@@ -239,7 +239,7 @@ def title_prompt_for_title(title: str) -> str:
 file_interface = gr.Interface(
     description=Path("description_file_upload.md").read_text(),
     fn=handle_file_upload,
-    examples=[[str(p), "English", True] for p in Path("examples").glob("*.pdf")],
+    examples=[[str(p), "", "English", True] for p in Path("examples").glob("*.pdf")],
     inputs=[
         gr.File(
             label="File (html or pdf)",
@@ -254,16 +254,12 @@ file_interface = gr.Interface(
             label="Include title and author of orignal content in podcast",
             value=False,
         ),
-        gr.Textbox(
-            label="OpenAI API Key",
-            visible=not os.getenv("OPENAI_API_KEY"),
-        ),
     ],
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
         gr.Textbox(label="Transcript"),
     ],
-    allow_flagging="False",
+    allow_flagging="never",
     clear_btn=None,
     cache_examples="lazy",
     api_name=False,
@@ -291,16 +287,12 @@ url_interface = gr.Interface(
             label="Include title and author of orignal content in podcast",
             value=False,
         ),
-        gr.Textbox(
-            label="OpenAI API Key",
-            visible=not os.getenv("OPENAI_API_KEY"),
-        ),
     ],
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
         gr.Textbox(label="Transcript"),
     ],
-    allow_flagging=False,
+    allow_flagging="never",
     clear_btn=None,
     cache_examples="lazy",
     api_name=False,

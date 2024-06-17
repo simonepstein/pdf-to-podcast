@@ -249,14 +249,10 @@ def handle_transcript(transcript:str, openai_api_key: str = None) -> bytes:
     dialog = Dialogue(scratchpad="", dialogue=dialog_items)
     return generate_audio_from_dialogue(dialog, openai_api_key)[0]
 
-file_interface = gr.Interface(
-    description=Path("description_file_upload.md").read_text(),
-    fn=handle_file_upload,
-    examples=[[str(p), "", "", "Simon [host]", "Alex [co-host]", "English", True] for p in Path("examples").glob("*.pdf")],
-    inputs=[
-        gr.File(
-            label="File (html or pdf)",
-        ),
+def common_components():
+    """Need to instantiate these separately because they are used in multiple places.
+    """
+    return [
         gr.Textbox(
             label="Podcast title",
         ),
@@ -279,8 +275,19 @@ file_interface = gr.Interface(
         gr.Checkbox(
             label="Include title and author of orignal content in podcast",
             value=False,
+        )
+    ]
+file_interface = gr.Interface(
+    description=Path("description_file_upload.md").read_text(),
+    fn=handle_file_upload,
+    examples=[[str(p), "", "", "Simon [host]", "Alex [co-host]", "English", True] for p in Path("examples").glob("*.pdf")],
+    inputs=[
+        gr.File(
+            label="File (html or pdf)",
         ),
     ],
+    additional_inputs_accordion=gr.Accordion(label="Customise podcast generation", open=False),
+    additional_inputs=common_components(),
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
         gr.Textbox(label="Transcript", show_copy_button=True),
@@ -303,30 +310,9 @@ url_interface = gr.Interface(
         gr.Textbox(
             label="URL"
         ),
-        gr.Textbox(
-            label="Podcast title",
-        ),
-        gr.Textbox(
-            label="Organisation name",
-        ),
-        gr.Textbox(
-            label="Participant 1",
-            value="Simon [host]",
-            info="A participants name and optional role"
-        ),
-        gr.Textbox(
-            label="Participant 2",
-            value="Alex [co-host]",
-            info="A participants name and optional role"
-        ),
-        gr.Dropdown(
-            DialogueOptions.target_languages, label="Language", info="Desired podcast language", value="English",
-        ),
-        gr.Checkbox(
-            label="Include title and author of orignal content in podcast",
-            value=False,
-        ),
     ],
+    additional_inputs_accordion=gr.Accordion(label="Customise podcast generation", open=False),
+    additional_inputs=common_components(),
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
         gr.Textbox(label="Transcript", show_copy_button=True),

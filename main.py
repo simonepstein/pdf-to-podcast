@@ -48,13 +48,15 @@ class DialogueOptions(BaseModel):
     target_languages: ClassVar[List[str]] = ["English", "French", "German", "Spanish", "Chinese"]
     title: str
     organisation: str
+    participants: List[str]
     language: str = "English"
     with_metadata: bool
 
-    def __init__(self, title: str, organisation: str, language: str, with_metadata: bool):
+    def __init__(self, title: str, organisation: str, participants:List[str], language: str, with_metadata: bool):
         super().__init__(
             title=title,
             organisation=organisation,
+            participants=participants,
             language=language,
             with_metadata=with_metadata
         )
@@ -68,9 +70,17 @@ class DialogueOptions(BaseModel):
             return ""
     def organisation_prompt(self):
         if self.organisation.strip():
-            return "The podcast is being produced by " + self.organisation + "."
+            return "The podcast is being produced by " + self.organisation + ". Be sure to mention this in the podcast/"
         else:
             return ""
+
+    def participants_prompt(self):
+        parts = [p for p in self.participants if p.strip()]
+        if len(parts) > 0:
+            return "The participants in the podcast are " + " and ".join(parts) + ".  If present, use their roles to frame how they contribute to the discussion."
+        else:
+            return ""
+
 
     def metadata_prompt(self):
         if self.with_metadata:
@@ -83,7 +93,7 @@ class DialogueOptions(BaseModel):
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, metadata_prompt:str, language: str) -> Dialogue:
+def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, participants_prompt:str, metadata_prompt:str, language: str) -> Dialogue:
     """
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
@@ -96,6 +106,8 @@ def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, met
     {title_prompt}
 
     {organisation_prompt}
+
+    {participants_prompt}
 
     First, carefully read through the input text and identify the main topics, key points, and any interesting facts or anecdotes. Think about how you could present this information in a fun, engaging way that would be suitable for an audio podcast.
 
@@ -147,6 +159,7 @@ def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = No
         text,
         options.title_prompt(),
         options.organisation_prompt(),
+        options.participants_prompt(),
         options.metadata_prompt(),
         options.language
     )
@@ -193,7 +206,7 @@ def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = No
 
     return temporary_file.name, transcript
 
-def handle_file_upload(file:str, title:str, organisation:str , language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_file_upload(file:str, title:str, organisation:str , participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Processing file =====")
@@ -206,9 +219,9 @@ def handle_file_upload(file:str, title:str, organisation:str , language: str, wi
         else:
             soup = BeautifulSoup(f, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-        return generate_audio(text, DialogueOptions(title, organisation, language, with_metadata), openai_api_key)
+        return generate_audio(text, DialogueOptions(title, organisation, [participant1, participant2], language, with_metadata), openai_api_key)
 
-def handle_url(url:str, title:str, organisation:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_url(url:str, title:str, organisation:str,  participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Fetching URL =====")
@@ -218,7 +231,7 @@ def handle_url(url:str, title:str, organisation:str, language: str, with_metadat
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-            return generate_audio(text, DialogueOptions(title, organisation, language, with_metadata), openai_api_key)
+            return generate_audio(text, DialogueOptions(title, organisation, [participant1, participant2], language, with_metadata), openai_api_key)
         else:
             raise gr.Error("Failed to retrieve the webpage")
         
@@ -234,7 +247,7 @@ def title_prompt_for_title(title: str) -> str:
 file_interface = gr.Interface(
     description=Path("description_file_upload.md").read_text(),
     fn=handle_file_upload,
-    examples=[[str(p), "", "", "English", True] for p in Path("examples").glob("*.pdf")],
+    examples=[[str(p), "", "", "Simon [host]", "Alex [co-host]", "English", True] for p in Path("examples").glob("*.pdf")],
     inputs=[
         gr.File(
             label="File (html or pdf)",
@@ -244,6 +257,16 @@ file_interface = gr.Interface(
         ),
         gr.Textbox(
             label="Organisation name",
+        ),
+        gr.Textbox(
+            label="Participant 1",
+            value="Simon [host]",
+            info="A participants name and optional role"
+        ),
+        gr.Textbox(
+            label="Participant 2",
+            value="Alex [co-host]",
+            info="A participants name and optional role"
         ),
         gr.Dropdown(
             DialogueOptions.target_languages, label="Language", info="Desired podcast language", value="English",
@@ -267,9 +290,9 @@ url_interface = gr.Interface(
     description=Path("description_url.md").read_text(),
     fn=handle_url,
     examples=[
-        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "", "The Guardian", "English", True],
-        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "", "The AI Guild", "French", False],
-        ["https://blog.67bricks.com/?p=739", "Coding Principals", "67 Bricks", "Spanish", True],
+        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "Nature's Banter", "The Guardian", "Simon [host]", "Alex [Phd researcher]", "English", True],
+        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "Mind Bytes", "67 Bricks", "Simon [co-host]", "Alex [host]", "Spanish", False],
+        ["https://blog.67bricks.com/?p=739", "Testing times", "The Guardian", "Simon [reluctant guest]", "Alex [host]", "English", True],
     ],
     inputs=[
         gr.Textbox(
@@ -280,6 +303,16 @@ url_interface = gr.Interface(
         ),
         gr.Textbox(
             label="Organisation name",
+        ),
+        gr.Textbox(
+            label="Participant 1",
+            value="Simon [host]",
+            info="A participants name and optional role"
+        ),
+        gr.Textbox(
+            label="Participant 2",
+            value="Alex [co-host]",
+            info="A participants name and optional role"
         ),
         gr.Dropdown(
             DialogueOptions.target_languages, label="Language", info="Desired podcast language", value="English",

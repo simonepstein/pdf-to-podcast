@@ -149,22 +149,7 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             return file.getvalue()
 
 
-def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = None) -> bytes:
-    logger.info("===== Generating audio =====")
-    logger.info(f"Options: {options} Input: {text}")
-
-    if len(text.strip()) == 0:
-        raise gr.Error("Failed to extract text from input")
-
-    llm_output = generate_dialogue(
-        text,
-        options.title_prompt(),
-        options.organisation_prompt(),
-        options.participants_prompt(),
-        options.metadata_prompt(),
-        options.language
-    )
-
+def generate_audio_from_dialogue(llm_output: Dialogue, openai_api_key: str = None) -> bytes:
     logger.info("===== Generating dialog =====")
     logger.info(f"Generated: {llm_output}")
     
@@ -207,6 +192,23 @@ def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = No
 
     return temporary_file.name, transcript
 
+def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = None) -> bytes:
+    logger.info("===== Generating audio =====")
+    logger.info(f"Options: {options} Input: {text}")
+
+    if len(text.strip()) == 0:
+        raise gr.Error("Failed to extract text from input")
+
+    llm_output = generate_dialogue(
+        text,
+        options.title_prompt(),
+        options.organisation_prompt(),
+        options.participants_prompt(),
+        options.metadata_prompt(),
+        options.language
+    )
+    return generate_audio_from_dialogue(llm_output, openai_api_key)
+
 def handle_file_upload(file:str, title:str, organisation:str , participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
@@ -239,11 +241,13 @@ def handle_url(url:str, title:str, organisation:str,  participant1:str, particip
     except Exception as e:
         raise gr.Error("Failed to retrieve content from URL: " + str(e))
 
-def title_prompt_for_title(title: str) -> str:
-    if title.strip():
-        return "The podcast should be called " + title + "."
-    else:
-        return ""
+def handle_transcript(transcript:str, openai_api_key: str = None) -> bytes:
+    if not os.getenv("OPENAI_API_KEY", openai_api_key):
+        raise gr.Error("OpenAI API key is required")
+    logger.info("===== Parising transcript =====")
+    dialog_items = [DialogueItem(text=l.split(':', 1)[1], speaker=l.split(':', 1)[0]) for l in transcript.split("\n\n") if l.strip()]
+    dialog = Dialogue(scratchpad="", dialogue=dialog_items)
+    return generate_audio_from_dialogue(dialog, openai_api_key)[0]
 
 file_interface = gr.Interface(
     description=Path("description_file_upload.md").read_text(),
@@ -279,7 +283,7 @@ file_interface = gr.Interface(
     ],
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
-        gr.Textbox(label="Transcript"),
+        gr.Textbox(label="Transcript", show_copy_button=True),
     ],
     allow_flagging="never",
     clear_btn=None,
@@ -325,7 +329,25 @@ url_interface = gr.Interface(
     ],
     outputs=[
         gr.Audio(label="Audio", format="mp3"),
-        gr.Textbox(label="Transcript"),
+        gr.Textbox(label="Transcript", show_copy_button=True),
+    ],
+    allow_flagging="never",
+    clear_btn=None,
+    cache_examples="lazy",
+    api_name=False,
+)
+
+transcript_interface = gr.Interface(
+    description=Path("description_transcript.md").read_text(),
+    fn=handle_transcript,
+    inputs = [
+        gr.Textbox(
+            label="Transcript",
+            lines=10,
+        ),
+    ],
+    outputs=[
+        gr.Audio(label="Audio", format="mp3"),
     ],
     allow_flagging="never",
     clear_btn=None,
@@ -336,8 +358,8 @@ url_interface = gr.Interface(
 demo = gr.TabbedInterface(
     title="PDF or Web page to Podcast",
     head=os.getenv("HEAD", "") + Path("head.html").read_text(), 
-    interface_list=[file_interface, url_interface],
-    tab_names=["Convert file", "Convert web page"],
+    interface_list=[file_interface, url_interface, transcript_interface],
+    tab_names=["Convert file", "Convert web page", "Process transcript (advanced)"],
 )
 demo = demo.queue(
     max_size=20,

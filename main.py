@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import List, Literal
+from typing import List, Literal, ClassVar
 
 import gradio as gr
 import sentry_sdk
@@ -44,11 +44,26 @@ class Dialogue(BaseModel):
     scratchpad: str
     dialogue: List[DialogueItem]
 
-target_languages = ["English", "French", "German", "Spanish", "Chinese"]
+class DialogueOptions(BaseModel):
+    target_languages: ClassVar[List[str]] = ["English", "French", "German", "Spanish", "Chinese"]
+    title: str
+    language: str = "English"
+    with_metadata: bool
+
+    def __init__(self, title: str, language: str, with_metadata: bool):
+        super().__init__(title=title, language=language, with_metadata=with_metadata)
+        if language not in DialogueOptions.target_languages:
+            raise ValueError(f"Language {language} not supported.")
+    
+    def title_prompt(self):
+        if self.title.strip():
+            return "The podcast should be called " + self.title + "."
+        else:
+            return ""
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue(title_prompt: str, text: str, language: str) -> Dialogue:
+def generate_dialogue(text: str, title_prompt: str, language: str) -> Dialogue:
     """
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
@@ -85,7 +100,7 @@ def generate_dialogue(title_prompt: str, text: str, language: str) -> Dialogue:
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue_with_metadata(title_prompt: str, text: str, language: str) -> Dialogue:
+def generate_dialogue_with_metadata(text: str, title_prompt: str, language: str) -> Dialogue:
     """
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
@@ -138,23 +153,17 @@ def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
             return file.getvalue()
 
 
-def generate_audio(text: str, title: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = None) -> bytes:
     logger.info("===== Generating audio =====")
-    logger.info(f"Input: {text}")
+    logger.info(f"Options: {options} Input: {text}")
+
     if len(text.strip()) == 0:
         raise gr.Error("Failed to extract text from input")
 
-    title_prompt = title_prompt_for_title(title)
-    logger.info(f"Title prompt: {title_prompt}")
-
-    llm_output = None
-    if with_metadata:
-        llm_output = generate_dialogue_with_metadata(title_prompt, text, language)
-    else:
-        llm_output = generate_dialogue(title_prompt, text, language)
-    # if language != "English":
-    #     logger.info(f"===== Translating dialog to {language} =====")
-    #     llm_output = translate_dialog(llm_output, language, openai_api_key)
+    llm_output = (
+        generate_dialogue_with_metadata(text, options.title_prompt(), options.language) if options.with_metadata 
+        else generate_dialogue(text, options.title_prompt(), options.language)
+    )
 
     logger.info("===== Generating dialog =====")
     logger.info(f"Generated: {llm_output}")
@@ -211,7 +220,7 @@ def handle_file_upload(file:str, title:str, language: str, with_metadata: bool, 
         else:
             soup = BeautifulSoup(f, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-        return generate_audio(text, title, language, with_metadata, openai_api_key)
+        return generate_audio(text, DialogueOptions(title, language, with_metadata), openai_api_key)
 
 def handle_url(url:str, title:str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
@@ -223,7 +232,7 @@ def handle_url(url:str, title:str, language: str, with_metadata: bool, openai_ap
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-            return generate_audio(text, title, language, with_metadata, openai_api_key)
+            return generate_audio(text, DialogueOptions(title, language, with_metadata), openai_api_key)
         else:
             raise gr.Error("Failed to retrieve the webpage")
         
@@ -248,7 +257,7 @@ file_interface = gr.Interface(
             label="Podcast title",
         ),
         gr.Dropdown(
-            target_languages, label="Language", info="Desired podcast language", value="English",
+            DialogueOptions.target_languages, label="Language", info="Desired podcast language", value="English",
         ),
         gr.Checkbox(
             label="Include title and author of orignal content in podcast",
@@ -281,7 +290,7 @@ url_interface = gr.Interface(
             label="Podcast title",
         ),
         gr.Dropdown(
-            target_languages, label="Language", info="Desired podcast language", value="English",
+            DialogueOptions.target_languages, label="Language", info="Desired podcast language", value="English",
         ),
         gr.Checkbox(
             label="Include title and author of orignal content in podcast",

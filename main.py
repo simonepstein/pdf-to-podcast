@@ -76,11 +76,12 @@ class DialogueOptions(BaseModel):
 
     def participants_prompt(self):
         parts = [p for p in self.participants if p.strip()]
-        if len(parts) > 0:
+        if len(parts) == 2:
             return "The participants in the podcast are " + " and ".join(parts) + ".  If present, use their roles to frame how they contribute to the discussion."
+        elif len(parts) == 1:
+            return "One of the participants in the podcast is " + parts[0] + ".  If present, use their role to frame how they contribute to the discussion."
         else:
             return ""
-
 
     def metadata_prompt(self):
         if self.with_metadata:

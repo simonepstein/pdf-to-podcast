@@ -46,16 +46,19 @@ class Dialogue(BaseModel):
 
 class DialogueOptions(BaseModel):
     target_languages: ClassVar[List[str]] = ["English", "French", "German", "Spanish", "Chinese"]
+    target_audiences: ClassVar[List[str]] = ["General", "Expert"]
     title: str
     organisation: str
+    audience: str
     participants: List[str]
     language: str = "English"
     with_metadata: bool
 
-    def __init__(self, title: str, organisation: str, participants:List[str], language: str, with_metadata: bool):
+    def __init__(self, title: str, organisation: str, audience: str, participants:List[str], language: str, with_metadata: bool):
         super().__init__(
             title=title,
             organisation=organisation,
+            audience=audience,
             participants=participants,
             language=language,
             with_metadata=with_metadata
@@ -73,6 +76,18 @@ class DialogueOptions(BaseModel):
             return "The podcast is being produced by " + self.organisation + ". Be sure to mention this in the podcast/"
         else:
             return ""
+
+    def audience_prompt1(self):
+        if self.audience == "General":
+            return "Keep in mind that your podcast should be accessible to a general audience, so avoid using too much jargon or assuming prior knowledge of the topic. If necessary, think of ways to briefly explain any complex concepts in simple terms."
+        else:
+            return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic. Expand the discussion to include additional topics that you think are important to the podcast.",
+
+    def audience_prompt2(self):
+        if self.audience == "General":
+            return "Use a conversational tone and include any necessary context or explanations to make the content accessible to a general audience."
+        else:
+            return "Use a conversational tone but remember yout audience are subject matter experts, so don't be afraid to make them think! "
 
     def participants_prompt(self):
         parts = [p for p in self.participants if p.strip()]
@@ -94,7 +109,7 @@ class DialogueOptions(BaseModel):
 
 @retry(retry=retry_if_exception_type(ValidationError))
 @llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, participants_prompt:str, metadata_prompt:str, language: str) -> Dialogue:
+def generate_dialogue(text: str, title_prompt: str, audience_prompt1: str, audience_prompt2: str, organisation_prompt:str, participants_prompt:str, metadata_prompt:str, language: str) -> Dialogue:
     """
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
@@ -113,9 +128,9 @@ def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, par
     First, carefully read through the input text and identify the main topics, key points, and any interesting facts or anecdotes. Think about how you could present this information in a fun, engaging way that would be suitable for an audio podcast.
 
     <scratchpad>
-    Brainstorm creative ways to discuss the main topics and key points you identified in the input text. Consider using analogies, storytelling techniques, or hypothetical scenarios to make the content more relatable and engaging for listeners.
+    Brainstorm creative ways to discuss the main topics and key points you identified in the input text. For a general audience, consider using analogies, storytelling techniques, or hypothetical scenarios to make the content more relatable and engaging for listeners.
 
-    Keep in mind that your podcast should be accessible to a general audience, so avoid using too much jargon or assuming prior knowledge of the topic. If necessary, think of ways to briefly explain any complex concepts in simple terms.
+    {audience_prompt1}
 
     Use your imagination to fill in any gaps in the input text or to come up with thought-provoking questions that could be explored in the podcast. The goal is to create an informative and entertaining dialogue, so feel free to be creative in your approach.
 
@@ -125,7 +140,9 @@ def generate_dialogue(text: str, title_prompt: str, organisation_prompt:str, par
     Now that you have brainstormed ideas and created a rough outline, it's time to write the actual podcast dialogue. Aim for a natural, conversational flow between the host and any guest speakers. Incorporate the best ideas from your brainstorming session and make sure to explain any complex topics in an easy-to-understand way.
 
     <podcast_dialogue>
-    Write your engaging, informative podcast dialogue here, based on the key points and creative ideas you came up with during the brainstorming session. Use a conversational tone and include any necessary context or explanations to make the content accessible to a general audience. Use made-up names for the hosts and guests to create a more engaging and immersive experience for listeners. Do not include any bracketed placeholders like [Host] or [Guest]. Design your output to be read aloud -- it will be directly converted into audio.
+    Write your engaging, informative podcast dialogue here, based on the key points and creative ideas you came up with during the brainstorming session. 
+    {audience_prompt2}
+    Use made-up names for the hosts and guests to create a more engaging and immersive experience for listeners. Do not include any bracketed placeholders like [Host] or [Guest]. Design your output to be read aloud -- it will be directly converted into audio.
     {metadata_prompt}
     Make the dialogue as long and detailed as possible, while still staying on topic and maintaining an engaging flow. Aim to use your full output capacity to create the longest podcast episode you can, while still communicating the key information from the input text in an entertaining way.
 
@@ -203,13 +220,15 @@ def generate_audio(text: str, options: DialogueOptions, openai_api_key: str = No
         text,
         options.title_prompt(),
         options.organisation_prompt(),
+        options.audience_prompt1(),
+        options.audience_prompt2(),
         options.participants_prompt(),
         options.metadata_prompt(),
         options.language
     )
     return generate_audio_from_dialogue(llm_output, openai_api_key)
 
-def handle_file_upload(file:str, title:str, organisation:str , participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_file_upload(file:str, title:str, organisation:str, audience:str, participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Processing file =====")
@@ -222,9 +241,9 @@ def handle_file_upload(file:str, title:str, organisation:str , participant1:str,
         else:
             soup = BeautifulSoup(f, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-        return generate_audio(text, DialogueOptions(title, organisation, [participant1, participant2], language, with_metadata), openai_api_key)
+        return generate_audio(text, DialogueOptions(title, organisation, audience, [participant1, participant2], language, with_metadata), openai_api_key)
 
-def handle_url(url:str, title:str, organisation:str,  participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
+def handle_url(url:str, title:str, organisation:str, audience:str, participant1:str, participant2: str, language: str, with_metadata: bool, openai_api_key: str = None) -> bytes:
     if not os.getenv("OPENAI_API_KEY", openai_api_key):
         raise gr.Error("OpenAI API key is required")
     logger.info("===== Fetching URL =====")
@@ -234,7 +253,7 @@ def handle_url(url:str, title:str, organisation:str,  participant1:str, particip
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             text = soup.get_text(separator=' ', strip=True)
-            return generate_audio(text, DialogueOptions(title, organisation, [participant1, participant2], language, with_metadata), openai_api_key)
+            return generate_audio(text, DialogueOptions(title, organisation, audience, [participant1, participant2], language, with_metadata), openai_api_key)
         else:
             raise gr.Error("Failed to retrieve the webpage")
         
@@ -259,6 +278,9 @@ def common_components():
         gr.Textbox(
             label="Organisation name",
         ),
+        gr.Dropdown(
+            DialogueOptions.target_audiences, label="Target audience", value="General",
+        ),
         gr.Textbox(
             label="Participant 1",
             value="Simon [host]",
@@ -280,7 +302,7 @@ def common_components():
 file_interface = gr.Interface(
     description=Path("description_file_upload.md").read_text(),
     fn=handle_file_upload,
-    examples=[[str(p), "", "", "Simon [host]", "Alex [co-host]", "English", True] for p in Path("examples").glob("*.pdf")],
+    examples=[[str(p), "", "", "General", "Simon [host]", "Alex [co-host]", "English", True] for p in Path("examples").glob("*.pdf")],
     inputs=[
         gr.File(
             label="File (html or pdf)",
@@ -302,9 +324,9 @@ url_interface = gr.Interface(
     description=Path("description_url.md").read_text(),
     fn=handle_url,
     examples=[
-        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "Nature's Banter", "The Guardian", "Simon [host]", "Alex [Phd researcher]", "English", True],
-        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "Mind Bytes", "67 Bricks", "Simon [co-host]", "Alex [host]", "Spanish", False],
-        ["https://blog.67bricks.com/?p=739", "Testing times", "The Guardian", "Simon [reluctant guest]", "Alex [host]", "English", True],
+        ["https://www.theguardian.com/lifeandstyle/article/2024/may/28/where-the-wild-things-are-the-untapped-potential-of-our-gardens-parks-and-balconies", "Nature's Banter", "The Guardian", "General", "Simon [host]", "Alex [Phd researcher]", "English", True],
+        ["https://www.oneusefulthing.org/p/what-apples-ai-tells-us-experimental", "Mind Bytes", "67 Bricks", "General", "Simon [co-host]", "Alex [host]", "Spanish", False],
+        ["https://blog.67bricks.com/?p=739", "Testing times", "The Guardian", "Expert", "Simon [guest]", "Alex [host]", "English", True],
     ],
     inputs=[
         gr.Textbox(

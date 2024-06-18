@@ -66,30 +66,30 @@ class DialogueOptions(BaseModel):
         if language not in DialogueOptions.target_languages:
             raise ValueError(f"Language {language} not supported.")
     
-    def title_prompt(self):
+    def title_prompt(self) -> str:
         if self.title.strip():
             return "The podcast should be called " + self.title + "."
         else:
             return ""
-    def organisation_prompt(self):
+    def organisation_prompt(self) -> str:
         if self.organisation.strip():
             return "The podcast is being produced by " + self.organisation + ". Be sure to mention this in the podcast/"
         else:
             return ""
 
-    def audience_prompt1(self):
+    def audience_prompt1(self) -> str:
         if self.audience == "General":
             return "Keep in mind that your podcast should be accessible to a general audience, so avoid using too much jargon or assuming prior knowledge of the topic. If necessary, think of ways to briefly explain any complex concepts in simple terms."
         else:
             return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic. Expand the discussion to include additional topics that you think are important to the podcast.",
 
-    def audience_prompt2(self):
+    def audience_prompt2(self) -> str:
         if self.audience == "General":
             return "Use a conversational tone and include any necessary context or explanations to make the content accessible to a general audience."
         else:
             return "Use a conversational tone but remember yout audience are subject matter experts, so don't be afraid to make them think! "
 
-    def participants_prompt(self):
+    def participants_prompt(self) -> str:
         parts = [p for p in self.participants if p.strip()]
         if len(parts) == 2:
             return "The participants in the podcast are " + " and ".join(parts) + ".  If present, use their roles to frame how they contribute to the discussion."
@@ -98,7 +98,7 @@ class DialogueOptions(BaseModel):
         else:
             return ""
 
-    def metadata_prompt(self):
+    def metadata_prompt(self) -> str:
         if self.with_metadata:
             return """
             Start by introducing the subject of the podcast, citing the title and any main authors you have identified.

@@ -81,7 +81,7 @@ class DialogueOptions(BaseModel):
         if self.audience == "General":
             return "Keep in mind that your podcast should be accessible to a general audience, so avoid using too much jargon or assuming prior knowledge of the topic. If necessary, think of ways to briefly explain any complex concepts in simple terms."
         else:
-            return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic. Expand the discussion to include additional topics that you think are important to the podcast.",
+            return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic and you should use jargon from the text where important to the discussion. Expand the discussion to include additional topics that you think are important to the podcast.",
 
     def audience_prompt2(self) -> str:
         if self.audience == "General":

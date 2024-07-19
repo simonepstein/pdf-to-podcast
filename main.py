@@ -422,7 +422,7 @@ The podcast should be called "The rest is data"
 
 The podcast is being produced by 67 Bricks. Be sure to mention this in the podcast.
 
-The participants in the podcast are Simon (evangelist) and Alex (researcher). Use their roles to frame how they contribute to the discussion.  Make reference to Alex's awesome new haircut when you introduce her, and how it is similar to Dora the Explorer.
+The participants in the podcast are Simon (evangelist) and Alex (researcher). Use their roles to frame how they contribute to the discussion.
 
 First, carefully read through the input text and identify the main topics, key points, and any interesting facts or anecdotes. Think about how you could present this information in a fun, engaging way that would be suitable for an audio podcast.
 

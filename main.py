@@ -41,7 +41,7 @@ class DialogueItem(BaseModel):
             }[self.speaker]
         else:
             return {
-                "female-1": "alloy",
+                "female-1": "fable",
                 "male-1": "onyx",
                 "female-2": "shimmer",
             }[self.speaker]

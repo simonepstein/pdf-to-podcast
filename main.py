@@ -33,11 +33,18 @@ class DialogueItem(BaseModel):
 
     @property
     def voice(self):
-        return {
-            "female-1": "alloy",
-            "male-1": "onyx",
-            "female-2": "shimmer",
-        }[self.speaker]
+        if os.getenv("ELEVEN_API_KEY"):
+            return {
+                "female-1": "tMFTYDYSRVyLolGRrDbe", # Delilah - Mature and Wise #"pFZP5JQG7iQjIQuC4Bku",
+                "male-1": "rrIua2BxiuHg5SA4dAwK", # Rob - confident and formal "JBFqnCBsd6RMkjVDRZzb",
+                "female-2": "7QYlLcDohK42fcnb6Rwi" # Jenni - Young & Bright "Xb7hH8MSUJpSbSDYk0k2",
+            }[self.speaker]
+        else:
+            return {
+                "female-1": "alloy",
+                "male-1": "onyx",
+                "female-2": "shimmer",
+            }[self.speaker]
 
 
 class Dialogue(BaseModel):
@@ -155,20 +162,37 @@ def generate_dialogue(text: str, title_prompt: str, audience_prompt1: str, audie
 def generate_dialogue_custom_prompt(custom_prompt: str) -> Dialogue:
     """{custom_prompt}"""
 
+# TODO remove api_key parameter
 def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
-    client = OpenAI(
-        api_key=api_key or os.getenv("OPENAI_API_KEY"),
-    )
+    if os.getenv("ELEVEN_API_KEY"):
+        logger.info("Submitting tts to elevenlabs")
+        from elevenlabs.client import ElevenLabs
 
-    with client.audio.speech.with_streaming_response.create(
-        model="tts-1",
+        client = ElevenLabs()
+
+        audio = client.generate(
+        text=text,
         voice=voice,
-        input=text,
-    ) as response:
-        with io.BytesIO() as file:
-            for chunk in response.iter_bytes():
-                file.write(chunk)
-            return file.getvalue()
+        model="eleven_multilingual_v2"
+        )
+        # convert Iterator[bytes] to bytes
+        audio_bytes = b"".join(list(audio))
+        return audio_bytes
+    else:
+        logger.info("Submitting tts to openai")
+        client = OpenAI(
+            api_key=api_key or os.getenv("OPENAI_API_KEY"),
+        )
+
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+        ) as response:
+            with io.BytesIO() as file:
+                for chunk in response.iter_bytes():
+                    file.write(chunk)
+                return file.getvalue()
 
 
 def generate_audio_from_dialogue(llm_output: Dialogue, openai_api_key: str = None) -> bytes:
@@ -180,7 +204,7 @@ def generate_audio_from_dialogue(llm_output: Dialogue, openai_api_key: str = Non
 
     characters = 0
 
-    with cf.ThreadPoolExecutor() as executor:
+    with cf.ThreadPoolExecutor(max_workers=2 if os.getenv("ELEVEN_API_KEY") else None) as executor:
         futures = []
         for line in llm_output.dialogue:
             transcript_line = f"{line.speaker}: {line.text}"

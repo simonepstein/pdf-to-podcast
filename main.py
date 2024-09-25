@@ -1,6 +1,7 @@
 import concurrent.futures as cf
 import glob
 import io
+import json
 import os
 import time
 from pathlib import Path
@@ -13,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from openai import OpenAI
-from promptic import llm
+import litellm
 from pydantic import BaseModel, ValidationError
 from pypdf import PdfReader
 from tenacity import retry, retry_if_exception_type
@@ -88,7 +89,7 @@ class DialogueOptions(BaseModel):
         if self.audience == "General":
             return "Keep in mind that your podcast should be accessible to a general audience, so avoid using too much jargon or assuming prior knowledge of the topic. If necessary, think of ways to briefly explain any complex concepts in simple terms."
         else:
-            return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic and you should use jargon from the text where important to the discussion. Expand the discussion to include additional topics that you think are important to the podcast.",
+            return "Keep in mind that your podcast is targeted at an expert audience, so you can assume prior knowledge of the topic and you should use jargon from the text where important to the discussion. Expand the discussion to include additional topics that you think are important to the podcast."
 
     def audience_prompt2(self) -> str:
         if self.audience == "General":
@@ -115,9 +116,8 @@ class DialogueOptions(BaseModel):
             return ""
 
 @retry(retry=retry_if_exception_type(ValidationError))
-@llm(model="gpt-4o", max_tokens=4096)
 def generate_dialogue(text: str, title_prompt: str, audience_prompt1: str, audience_prompt2: str, organisation_prompt:str, participants_prompt:str, metadata_prompt:str, language: str) -> Dialogue:
-    """
+    prompt = f"""
     Your task is to take the input text provided and turn it into an engaging, informative podcast dialogue in {language}. The input text may be messy or unstructured, as it could come from a variety of sources like PDFs or web pages. Don't worry about the formatting issues or any irrelevant information; your goal is to extract the key points and interesting facts that could be discussed in a podcast.
 
     Here is the input text you will be working with:
@@ -156,13 +156,30 @@ def generate_dialogue(text: str, title_prompt: str, audience_prompt1: str, audie
     At the end of the dialogue, have the host and guest speakers naturally summarize the main insights and takeaways from their discussion. This should flow organically from the conversation, reiterating the key points in a casual, conversational manner. Avoid making it sound like an obvious recap - the goal is to reinforce the central ideas one last time before signing off.
     </podcast_dialogue>
     """
+    return generate_dialogue_from_openai(prompt)
+
+def generate_dialogue_custom_prompt(custom_prompt: str) -> Dialogue:
+    return generate_dialogue_from_openai(custom_prompt)
+
 
 @retry(retry=retry_if_exception_type(ValidationError))
-@llm(model="gpt-4o", max_tokens=4096)
-def generate_dialogue_custom_prompt(custom_prompt: str) -> Dialogue:
-    """{custom_prompt}"""
+def generate_dialogue_from_openai(prompt: str) -> Dialogue:
+    messages = [{"content": prompt, "role": "user"}]
+    response = litellm.completion(
+        model="gpt-4o-2024-08-06",
+        messages=messages,
+        response_format=Dialogue,
+        stream=False
+    )
 
-# TODO remove api_key parameter
+    content = response.choices[0].message.content # type: ignore
+    if content is not None:
+        json_data = json.loads(content)
+        return Dialogue(**json_data)
+    else:
+        # Allows retry
+        raise ValidationError
+
 def get_mp3(text: str, voice: str, api_key: str = None) -> bytes:
     if os.getenv("ELEVEN_API_KEY"):
         logger.info("Submitting tts to elevenlabs")
